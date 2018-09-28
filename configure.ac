@@ -55,10 +55,10 @@ AC_CHECK_FUNC(rados_read_op_omap_get_keys2, AC_DEFINE(HAVE_OMAP_GET_KEYS_2, 1, [
 
 # Evaluate with options
 AC_ARG_WITH(dict,
-AS_HELP_STRING([--with-dict[=ARG]], [Build with [ARG=yes] or without [ARG=no] RADOS dictionary plugin (yes)]),
+AS_HELP_STRING([--with-dict[=ARG]], [Build with [ARG=yes] or without [ARG=no] RADOS dictionary plugin (no)]),
   TEST_WITH(dict, $withval),
-  want_dict=yes)
-AM_CONDITIONAL(BUILD_DICT_RADOS, test "$want_dict" = "yes")
+  want_dict=no)
+AM_CONDITIONAL(BUILD_DICT_RADOS, test "$want_dict" = "no")
 
 AC_ARG_WITH(storage,
 AS_HELP_STRING([--with-storage[=ARG]], [Build with [ARG=yes] or without [ARG=no] RADOS storage plugin (yes)]),

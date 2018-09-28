@@ -33,7 +33,9 @@ extern "C" {
 #include "mail-search-parser-private.h"
 #include "mail-search.h"
 #include "mail-search-build.h"
-#include "doveadm-cmd.h"
+
+// DOVECOT> "2.2.10 #include "doveadm-cmd.h"
+
 #include "istream.h"
 #include "doveadm-print.h"
 }
@@ -476,7 +478,7 @@ static int restore_index_entry(struct mail_user *user, const char *mailbox_name,
 
   save_ctx->transaction->save_count++;
   r_ctx->finished = TRUE;
-  save_ctx->finishing = FALSE;
+  // DOVECOR > 2.2.10 save_ctx->finishing = FALSE;
   save_ctx->unfinished = FALSE;
   save_ctx->saving = FALSE;
   if (mailbox_transaction_commit(&trans) < 0) {
@@ -618,7 +620,7 @@ static int iterate_mailbox(const struct mail_namespace *ns, const struct mailbox
   mailbox_transaction = mailbox_transaction_begin(box, MAILBOX_TRANSACTION_FLAG_EXTERNAL, reason);
 
 #else
-  mailbox_transaction = mailbox_transaction_begin(box, MAILBOX_TRANSACTION_FLAG_EXTERNAL);
+  mailbox_transaction = mailbox_transaction_begin(box, MAILBOX_TRANSACTION_FLAG_NO_CACHE_DEC);
 #endif
 
   search_args = mail_search_build_init();
@@ -659,6 +661,7 @@ static int iterate_mailbox(const struct mail_namespace *ns, const struct mailbox
   if (mailbox_search_deinit(&search_ctx) < 0) {
     return -1;
   }
+
   if (mailbox_transaction_commit(&mailbox_transaction) < 0) {
     return -1;
   }
@@ -706,7 +709,6 @@ static int cmd_rmb_check_indices_run(struct doveadm_mail_cmd_context *ctx, struc
   if (ctx->exit_code < 0) {
     return 0;
   }
-
   struct mail_namespace *ns = mail_namespace_find_inbox(user->namespaces);
   for (; ns != NULL; ns = ns->next) {
     check_namespace_mailboxes(ns, mail_objects);

@@ -14,7 +14,7 @@
 
 extern "C" {
 #include "dovecot-all.h"
-#include "mailbox-recent-flags.h"
+// DOVECOT > 2.2.10  #include "mailbox-recent-flags.h"
 
 #include "rbox-sync.h"
 #include "debug-helper.h"
@@ -258,7 +258,8 @@ static int rbox_sync_index(struct rbox_sync_context *ctx) {
   }
   /* mark the newly seen messages as recent */
   if (mail_index_lookup_seq_range(ctx->sync_view, hdr->first_recent_uid, hdr->next_uid, &seq1, &seq2)) {
-    mailbox_recent_flags_set_seqs(&ctx->rbox->box, ctx->sync_view, seq1, seq2);
+    index_mailbox_set_recent_seq(box, ctx->sync_view, seq1, seq2);
+    // DOVECOT 2.2.10 mailbox_recent_flags_set_seqs(&ctx->rbox->box, ctx->sync_view, seq1, seq2);
   }
 
   while (mail_index_sync_next(ctx->index_sync_ctx, &sync_rec)) {
@@ -388,7 +389,8 @@ int rbox_sync_begin(struct rbox_mailbox *rbox, struct rbox_sync_context **ctx_r,
       /* do a full resync and try again. */
       ret = rbox_storage_rebuild_in_context(rbox->storage, force_rebuild);
       if (ret >= 0) {
-        mailbox_recent_flags_reset(&rbox->box);
+        // DOVEVCOT > 2.2.10 mailbox_recent_flags_reset(&rbox->box);
+        index_mailbox_reset_uidvalidity(&rbox->box);
         success = true;
         break;
       }
@@ -408,8 +410,12 @@ int rbox_sync_begin(struct rbox_mailbox *rbox, struct rbox_sync_context **ctx_r,
   sync_flags |= MAIL_INDEX_SYNC_FLAG_AVOID_FLAG_UPDATES;
 
   if (ret >= 0) {
-    ret = index_storage_expunged_sync_begin(&rbox->box, &ctx->index_sync_ctx, &ctx->sync_view, &ctx->trans,
-                                            static_cast<enum mail_index_sync_flags>(sync_flags));
+    ret = mail_index_sync_begin(rbox->box.index, &ctx->index_sync_ctx, &ctx->sync_view, &ctx->trans, sync_flags);
+
+    /* DOVECOT > 2.2.10    ret = index_storage_expunged_sync_begin(&rbox->box, &ctx->index_sync_ctx, &ctx->sync_view,
+   &ctx->trans,
+                                            static_cast<enum mail_index_sync_flags>(sync_flags));*/
+
     if (mail_index_reset_fscked(rbox->box.index))
       rbox_set_mailbox_corrupted(&rbox->box);
   }
@@ -427,7 +433,8 @@ int rbox_sync_begin(struct rbox_mailbox *rbox, struct rbox_sync_context **ctx_r,
   if (ret <= 0) {
     mail_index_sync_rollback(&ctx->index_sync_ctx);
     if (ret < 0) {
-      index_storage_expunging_deinit(&ctx->rbox->box);
+      /* DOVECOT > 2.2.10
+      index_storage_expunging_deinit(&ctx->rbox->box);*/
       array_delete(&ctx->expunged_items, array_count(&ctx->expunged_items) - 1, 1);
       array_free(&ctx->expunged_items);
       i_free(ctx);
@@ -566,9 +573,9 @@ int rbox_sync_finish(struct rbox_sync_context **_ctx, bool success) {
   } else {
     mail_index_sync_rollback(&ctx->index_sync_ctx);
   }
-
-  index_storage_expunging_deinit(&ctx->rbox->box);
-
+  /* DOVECOT > 2.2.10
+    index_storage_expunging_deinit(&ctx->rbox->box);
+  */
   if (array_is_created(&ctx->expunged_items)) {
     if (array_count(&ctx->expunged_items) > 0) {
       exp_items = array_get(&ctx->expunged_items, &count);

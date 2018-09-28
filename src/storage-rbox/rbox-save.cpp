@@ -630,9 +630,10 @@ void rbox_transaction_save_rollback(struct mail_save_context *_ctx) {
   }
 
   clean_up_mail_object_list(r_ctx, (struct rbox_storage *)&r_ctx->mbox->storage->storage);
-
+  /* DOVECOT > 2.2.10
   guid_128_empty(r_ctx->mail_guid);
   guid_128_empty(r_ctx->mail_oid);
+  */
   if (_ctx->dest_mail != NULL && r_ctx->dest_mail_allocated == TRUE) {
     mail_free(&_ctx->dest_mail);
   }

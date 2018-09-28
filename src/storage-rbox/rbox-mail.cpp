@@ -552,11 +552,11 @@ static int rbox_mail_get_special(struct mail *_mail, enum mail_fetch_field field
     case MAIL_FETCH_IMAP_ENVELOPE:
     case MAIL_FETCH_FROM_ENVELOPE:
     case MAIL_FETCH_HEADER_MD5:
-    case MAIL_FETCH_STORAGE_ID:
+    // DOVECOT > 2.2.10 case MAIL_FETCH_STORAGE_ID:
     case MAIL_FETCH_MAILBOX_NAME:
     case MAIL_FETCH_SEARCH_RELEVANCY:
     case MAIL_FETCH_REFCOUNT:
-    case MAIL_FETCH_BODY_SNIPPET:
+    // DOVECOT > 2.2.10 case MAIL_FETCH_BODY_SNIPPET:
     default:
       break;
   }

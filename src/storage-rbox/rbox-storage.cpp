@@ -26,6 +26,7 @@ extern "C" {
 #include "guid.h"
 #include "mailbox-list-fs.h"
 #include "macros.h"
+#include "istream.h"
 }
 
 #include "rbox-mailbox-list-fs.h"
@@ -274,7 +275,7 @@ static int rbox_mailbox_alloc_index(struct rbox_mailbox *rbox) {
 
   // register index record holding the mail guid
   rbox->ext_id = mail_index_ext_register(rbox->box.index, "obox", 0, sizeof(struct obox_mail_index_record), 1);
-
+  i_debug("setting ext_id =%d", rbox->ext_id);
   FUNC_END();
   return 0;
 }
@@ -320,9 +321,19 @@ int rbox_read_header(struct rbox_mailbox *rbox, struct sdbox_index_header *hdr, 
   FUNC_END();
   return ret;
 }
+static int rbox_mailbox_open_finish(struct mailbox *box, bool move_to_memory) {
+  if (index_storage_mailbox_open(box, move_to_memory) < 0)
+    return -1;
 
+  return 0;
+}
 static int rbox_open_mailbox(struct mailbox *box) {
   FUNC_START();
+
+  if (box->input != NULL) {
+    i_stream_ref(box->input);
+    return rbox_mailbox_open_finish(box, FALSE);
+  }
 
   const char *box_path = mailbox_get_path(box);
   struct stat st;
@@ -516,14 +527,20 @@ int rbox_mailbox_create_indexes(struct mailbox *box, const struct mailbox_update
 
   const struct mail_index_header *hdr;
   uint32_t uid_validity, uid_next;
-  struct mail_index_view *view;
+  struct mail_index_transaction *new_trans = NULL;
 
+  i_debug("mailbox create!");
   if (trans == NULL) {
-    trans = mail_index_transaction_begin(box->view, static_cast<mail_index_transaction_flags>(0));
+    new_trans = mail_index_transaction_begin(box->view, static_cast<mail_index_transaction_flags>(0));
+    trans = new_trans;
   }
-  view = mail_index_view_open(box->index);
-  hdr = mail_index_get_header(view);
-
+  i_debug("before get header!");
+  // dovecot > 2.2.10 view = mail_index_view_open(box->index);
+  hdr = mail_index_get_header(box->view);
+  if (hdr == NULL) {
+    return -1;
+  }
+  i_debug("HADER ok!");
   if (update != NULL && update->uid_validity != 0) {
     uid_validity = update->uid_validity;
   } else if (hdr->uid_validity != 0) {
@@ -546,12 +563,14 @@ int rbox_mailbox_create_indexes(struct mailbox *box, const struct mailbox_update
                              sizeof(update->min_first_recent_uid), FALSE);
   }
   if (update != NULL && update->min_highest_modseq != 0 &&
-      mail_index_modseq_get_highest(view) < update->min_highest_modseq) {
+      mail_index_modseq_get_highest(box->view) < update->min_highest_modseq) {
     mail_index_modseq_enable(box->index);
     mail_index_update_highest_modseq(trans, update->min_highest_modseq);
   }
-  mail_index_view_close(&view);
-
+  i_debug("HADER mail index update header OK!");
+/* dovecot > 2.2.10
+mail_index_view_close(&view);
+*/
 #ifdef DOVECOT_CEPH_PLUGINS_HAVE_INDEX_POP3_UIDL_H
   if (box->inbox_user && box->creating) {
     /* initialize pop3-uidl header when creating mailbox
@@ -561,10 +580,12 @@ int rbox_mailbox_create_indexes(struct mailbox *box, const struct mailbox_update
 #endif
 
   rbox_update_header((struct rbox_mailbox *)box, trans, update);
-  if (trans != NULL) {
-    if (mail_index_transaction_commit(&trans) < 0) {
-      mailbox_set_index_error(box);
+  i_debug("HADER mail rbox update header OK!");
 
+  if (new_trans != NULL) {
+    if (mail_index_transaction_commit(&new_trans) < 0) {
+      mailbox_set_index_error(box);
+      i_debug("HADER mailbox_set_index_error trans != BULL!");
       FUNC_END_RET("ret == -1");
       return -1;
     }
@@ -793,9 +814,15 @@ void rbox_notify_changes(struct mailbox *box) {
   FUNC_START();
 
   if (box->notify_callback == NULL) {
+    index_mailbox_check_remove_all(box);
+    /* DOVECOT > 2.2.10
     mailbox_watch_remove_all(box);
+    */
   } else {
+    /* DOVECOT > 2.2.10
     mailbox_watch_add(box, mailbox_get_path(box));
+    */
+    index_mailbox_check_add(box, mailbox_get_path(box));
   }
 
   FUNC_END();
