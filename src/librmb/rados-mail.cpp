@@ -30,7 +30,10 @@ RadosMail::RadosMail()
       mail_buffer(nullptr),
       save_date_rados(-1),
       valid(true),
-      index_ref(false) {}
+      index_ref(false),
+      deprecated_uid(false),
+      restored(false),
+      lost_object(false) {}
 
 RadosMail::~RadosMail() {}
 
@@ -101,7 +104,7 @@ std::string RadosMail::to_string(const string& padding) {
        << "save_time=" << save_time << "\n";
   } else {
     ss << padding << "        "
-       << "save_time= INVALID DATE '" << save_date_rados << "'\n";
+       << "save_time= UNKNOWN '" << save_date_rados << "'\n";
   }
   if (p_size != NULL && v_size != NULL) {
     ss << padding << "        " << static_cast<char>(RBOX_METADATA_PHYSICAL_SIZE) << "(phy_size)=" << p_size << " "

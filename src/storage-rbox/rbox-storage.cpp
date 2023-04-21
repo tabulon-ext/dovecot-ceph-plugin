@@ -108,17 +108,10 @@ static const char *rbox_storage_find_root_dir(const struct mail_namespace *ns) {
   if (ns->owner != NULL && mail_user_get_home(ns->owner, &home) > 0) {
     const char *path = t_strconcat(home, "/rbox", NULL);
     if (access(path, R_OK | W_OK | X_OK) == 0) {
-#ifdef DEBUG
-      i_debug("rbox: root exists (%s)", path);
-#endif
       FUNC_END();
       return path;
     }
-#ifdef DEBUG
-    i_debug("rbox: access(%s, rwx): failed: %m", path);
-#endif
   }
-
   FUNC_END();
   return NULL;
 }
@@ -136,7 +129,6 @@ bool rbox_storage_autodetect(const struct mail_namespace *ns, struct mailbox_lis
 #ifdef DEBUG
       i_debug("rbox: couldn't find root dir");
 #endif
-
       FUNC_END();
       return FALSE;
     }
@@ -277,7 +269,6 @@ static int rbox_mailbox_alloc_index(struct rbox_mailbox *rbox) {
   i_zero(&hdr);
   guid_128_generate(hdr.mailbox_guid);
   mail_index_set_ext_init_data(rbox->box.index, rbox->hdr_ext_id, &hdr, sizeof(hdr));
-  // memcpy(rbox->mailbox_guid, hdr.mailbox_guid, sizeof(rbox->mailbox_guid));
 
   // register index record holding the mail guid
   rbox->ext_id = mail_index_ext_register(rbox->box.index, "obox", 0, sizeof(struct obox_mail_index_record), 1);
@@ -379,10 +370,7 @@ static int rbox_open_mailbox(struct mailbox *box) {
       static_cast<mail_index_fsync_mask>(MAIL_INDEX_FSYNC_MASK_APPENDS | MAIL_INDEX_FSYNC_MASK_EXPUNGES));
 
   struct rbox_mailbox *rbox = (struct rbox_mailbox *)box;
-  if (!array_is_created(&rbox->moved_items)) {
-    i_array_init(&rbox->moved_items, 32);
-  }
-
+  
   FUNC_END();
   return 0;
 }
@@ -460,18 +448,22 @@ int rbox_open_rados_connection(struct mailbox *box, bool alt_storage) {
                                             : librmb::WAIT_FOR_COMPLETE_AND_CB);
     /* open connection to primary and alternative storage */
     ret = rados_storage->open_connection(rbox->storage->config->get_pool_name(),
+                                         rbox->storage->config->get_index_pool_name(), 
                                          rbox->storage->config->get_rados_cluster_name(),
                                          rbox->storage->config->get_rados_username());
 
     if (alt_storage) {
-      ret = rbox->storage->alt->open_connection(box->list->set.alt_dir, rbox->storage->config->get_rados_cluster_name(),
+      ret = rbox->storage->alt->open_connection(box->list->set.alt_dir, 
+                                                rbox->storage->config->get_index_pool_name(), 
+                                                rbox->storage->config->get_rados_cluster_name(),
                                                 rbox->storage->config->get_rados_username());
 
       rbox->storage->alt->set_ceph_wait_method(rbox->storage->config->is_ceph_aio_wait_for_safe_and_cb()
                                                    ? librmb::WAIT_FOR_SAFE_AND_CB
                                                    : librmb::WAIT_FOR_COMPLETE_AND_CB);
     }
-  } catch (std::exception &e) {
+  } catch (std::exception &e) {    
+    i_error("Exception: setting up ceph connection: %s",e.what());
     ret = -1;
   }
 
@@ -483,6 +475,7 @@ int rbox_open_rados_connection(struct mailbox *box, bool alt_storage) {
 #endif
     return 0;
   }
+  
   if (ret < 0) {
     i_error(
         "Open rados connection. Error(%d,%s) (pool_name(%s), cluster_name(%s), rados_user_name(%s), "
@@ -500,7 +493,9 @@ int rbox_open_rados_connection(struct mailbox *box, bool alt_storage) {
     ret = rbox->storage->config->save_default_rados_config();
   }
   if (ret < 0) {
-    i_error("unable to read rados_config return value : %d", ret);
+    // connection seems to be up, but read to object store is not okay. We can only fail hard!
+    i_error("unrecoverable, we cannot proceed without rados_config ceph returned : %d", ret);
+    assert(ret == 0);
     return ret;
   }
   rbox->storage->ms->create_metadata_storage(&rbox->storage->s->get_io_ctx(), rbox->storage->config);
@@ -628,7 +623,6 @@ int rbox_mailbox_create_indexes(struct mailbox *box, const struct mailbox_update
   if (new_trans != NULL) {
     if (mail_index_transaction_commit(&new_trans) < 0) {
       mailbox_set_index_error(box);
-
       FUNC_END_RET("ret == -1");
       return -1;
     }
@@ -702,21 +696,7 @@ void rbox_set_mailbox_corrupted(struct mailbox *box) {
 static void rbox_mailbox_close(struct mailbox *box) {
   FUNC_START();
   struct rbox_mailbox *rbox = (struct rbox_mailbox *)box;
-  struct expunged_item *const *moved_items, *moved_item;
-
-  if (array_is_created(&rbox->moved_items)) {
-    if (array_count(&rbox->moved_items) > 0) {
-      unsigned int moved_count;
-      moved_items = array_get(&rbox->moved_items, &moved_count);
-      for (unsigned int i = 0; i < moved_count; i++) {
-        moved_item = moved_items[i];
-        i_free(moved_item);
-      }
-      array_delete(&rbox->moved_items, array_count(&rbox->moved_items) - 1, 1);
-    }
-    array_free(&rbox->moved_items);
-  }
-
+ 
   if (rbox->storage->corrupted_rebuild_count != 0) {
 #ifdef DEBUG
     i_debug("storage corrupted rebuild count != 0 calling sync");
@@ -959,29 +939,48 @@ int check_users_mailbox_delete_ns_object(struct mail_user *user, librmb::RadosDo
 
 int rbox_storage_mailbox_delete(struct mailbox *box) {
   FUNC_START();
+  
   int ret = index_storage_mailbox_delete(box);
   if (ret < 0) {
-    i_error("while processing index_storage_mailbox_delete: %d", ret);
+    i_debug("while processing index_storage_mailbox_delete: %d", ret);
     return ret;
   }
+
   struct rbox_storage *r_storage = (struct rbox_storage *)box->storage;
-  // 90 plugin konfigurierbar!
   read_plugin_configuration(box);
+  
+  ret = rbox_open_rados_connection(box, false);
+  if (ret < 0) {
+    i_debug("rbox_storage_mailbox_delete: Opening rados connection : %d", ret);
+    return ret;
+  }
+
+  i_debug("clean: deleting mailbox %s check if ceph index need to be deleted. %ld , %d, compare %d box='%s' with '%s'",
+            box->name, r_storage->config, 
+            r_storage->config->get_object_search_method(), 
+            strcmp(box->name,"INBOX") == 0, 
+            box->name, "INBOX");
+
+  if( r_storage->config->get_object_search_method() == 2 &&
+      strcmp(box->name,"INBOX") == 0 ){    
+    int ceph_index_delete_ret = r_storage->s->ceph_index_delete(); 
+    if(ceph_index_delete_ret<0){
+      i_warning("ceph_index delete failed, ceph index still exists : ret = ", ceph_index_delete_ret);
+    }else {
+      i_debug("rbox_storage_mailbox_delete: deleting ceph index: %d", ret);  
+    }  
+  }
+
   if (!r_storage->config->is_rbox_check_empty_mailboxes()) {
     return ret;
   }
 
-  ret = rbox_open_rados_connection(box, false);
-  if (ret < 0) {
-    i_error("rbox_storage_mailbox_delete: Opening rados connection : %d", ret);
-    return ret;
-  }
   if (r_storage->config->is_user_mapping()) {  //
-
     struct rbox_mailbox *rbox = (struct rbox_mailbox *)box;
     ret = check_users_mailbox_delete_ns_object(rbox->storage->storage.user, r_storage->config, r_storage->ns_mgr,
                                                r_storage->s);
   }
+  
 
   FUNC_END();
   return ret;

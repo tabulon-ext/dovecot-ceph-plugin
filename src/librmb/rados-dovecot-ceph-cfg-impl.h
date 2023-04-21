@@ -35,8 +35,12 @@ class RadosDovecotCephCfgImpl : public RadosDovecotCephCfg {
   void update_pool_name_metadata(const char *value) override { dovecot_cfg.update_pool_name_metadata(value); }
   const std::string &get_rados_save_log_file() override { return dovecot_cfg.get_rados_save_log_file(); }
   const std::string &get_pool_name_metadata_key() override { return dovecot_cfg.get_pool_name_metadata_key(); }
+ 
+  int get_write_method() override { return std::stoi(dovecot_cfg.get_write_method());}
 
+  int get_chunk_size() override { return std::stoi(dovecot_cfg.get_chunk_size());}
   std::string &get_pool_name() override { return dovecot_cfg.get_pool_name(); }
+  std::string &get_index_pool_name() override { return dovecot_cfg.get_index_pool_name(); };
 
   std::string &get_key_prefix_keywords() override { return dovecot_cfg.get_key_prefix_keywords(); }
   void update_metadata(const std::string &key, const char *value_) override {
@@ -46,6 +50,7 @@ class RadosDovecotCephCfgImpl : public RadosDovecotCephCfg {
   bool is_ceph_posix_bugfix_enabled() override { return dovecot_cfg.is_ceph_posix_bugfix_enabled(); }
   bool is_ceph_aio_wait_for_safe_and_cb() override { return dovecot_cfg.is_ceph_aio_wait_for_safe_and_cb(); }
   bool is_write_chunks() override { return dovecot_cfg.is_write_chunks(); }
+  
   // rados config
   bool is_user_mapping() override { return rados_cfg.is_user_mapping(); }
   void set_config_valid(bool is_valid_) override {
@@ -54,6 +59,8 @@ class RadosDovecotCephCfgImpl : public RadosDovecotCephCfg {
       rados_cfg.set_cfg_object_name(dovecot_cfg.get_rbox_cfg_object_name());
     }
   }
+  int get_object_search_method()  override { return std::stoi(dovecot_cfg.get_object_search_method()); }
+  int get_object_search_threads() override { return std::stoi(dovecot_cfg.get_object_search_threads()); }
 
   void set_rbox_cfg_object_name(const std::string &value) override { dovecot_cfg.set_rbox_cfg_object_name(value); }
 

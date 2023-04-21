@@ -1,5 +1,106 @@
 # Change Log
-## [0.0.26](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.25) (2022-02-28)
+## [1.0.0](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/1.0.0) (2023-03-23)
+- prod release
+## [0.0.52](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.52) (2023-02-27)
+- fix: some problems with virtual box and Spica
+
+## [0.0.51](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.51) (2023-02-09)
+- fix: not escaped % in i_warning.
+
+## [0.0.50](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.50) (2023-02-02)
+- fix: cleanup ceph-index size calculation
+
+## [0.0.49](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.49) (2023-01-29)
+- fix: cleanup ceph-index in case of mailbox INBOX delete
+
+## [0.0.48](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.48) (2023-01-26)
+- cleanup ceph-index in case of mailbox INBOX delete
+
+## [0.0.47](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.47) (2022-12-05)
+- #355 fix gzip trailer when stream is empty
+       fix save_method 1+2 buffersize (1 byte short) 
+       bugfix-355-fix-buffersize-write-method
+
+
+## [0.0.46](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.46) (2022-11-23)
+- #349 bugfix doveadm rmb create ceph index validate object metadata
+
+## [0.0.45](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.45) (2022-11-22)
+- #349 bugfix doveadm rmb return code not set
+
+## [0.0.44](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.44) (2022-11-21)
+- #349 additional recovery method (ceph index object)
+
+## [0.0.43](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.43) (2022-10-27)
+- #346 segmentation fault (rbox_copy) if rbox_mail is null
+
+## [0.0.42](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.42) (2022-10-18)
+- #346 segmentation fault (rbox_copy) if rbox_mail is null
+
+## [0.0.41](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.41) (2022-09-27)
+- #342 multithreading bugfix and additional logging        
+
+## [0.0.40](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.40) (2022-09-22)
+- #342 multithreading object search for doveadm force-resync (feature toggle) 
+       new config params: 
+       # search method default = 0 | 1 multithreading
+       rbox_object_search_method=1 
+       # number of threads to use in case of search_method=1
+       rbox_object_search_threads=4
+
+## [0.0.39](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.39) (2022-08-25)
+- #339 fail with assert if rados_config cannot be found due to network/connection issue 
+       retry ceph read operations / read / xattr with timeout 
+
+## [0.0.38](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.38) (2022-06-24)
+- Fix losing \r when saving mail from \n source
+
+## [0.0.37](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.37) (2022-05-23)
+- #332: quota: notify message count and type invalid for imap move operation
+
+## [0.0.36](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.36) (2022-05-19)
+- #319: force-resync: immediatelly assign unassigned objects to inbox 
+- #328: fix segmentation fault copy mail from virtual mailbox
+
+## [0.0.35](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.35) (2022-05-05)
+- #322: rbox_write_method parameter with implemtnation of different ways to save huge mails to rados
+
+## [0.0.34](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.34) (2022-05-03)
+- #322: [BUGFIX] memory crash appending big attachments (bufferlist)
+- #322: [CONFIGURATION] new configuration setting rbox_chunk_size with default 10240 Bytes 
+
+## [0.0.33](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.33) (2022-04-27)
+- #316: wait synchronously for rados write operations
+
+## [0.0.32](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.32) (2022-04-05)
+- #313: fix crash if append is interrupted. 
+
+## [0.0.31](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.31) (2022-04-03)
+- #304: force-resync: preserve mail flags 
+- #306: force-resync: restore all mail objects to inbox in case they have no reference to existing mailboxes
+- #310: save-mail: check ceph dove size option, if mail size is bigger abort save.
+
+## [0.0.30](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.30) (2022-03-14)
+
+- bugfix: retry ceph operation in case of connection timeout
+
+## [0.0.29](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.29) (2022-03-10)
+
+- bugfix: force-resync
+- bugfix: set mail as expunged.
+
+## [0.0.28](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.28) (2022-02-28)
+
+
+- bugfix: wait for metadata copy before updating index (MOVE Mail)
+- enhancement: in case we have more then one mail process (imap, pop3,..) running at the same time, 
+               do not print warning message if mail access fails due to old index entry .       
+
+## [0.0.27](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.27) (2022-02-28)
+
+- bugfix initialisation rados_mail->deprecated_uid
+
+## [0.0.26](https://github.com/ceph-dovecot/dovecot-ceph-plugin/tree/0.0.26) (2022-02-28)
 
 - support deprecated uuid format RECORD and MICROSOFT
 

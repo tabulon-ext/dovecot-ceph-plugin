@@ -20,6 +20,7 @@
 #include <map>
 #include <string>
 #include <iostream>
+#include <unistd.h>
 
 extern "C" {
 
@@ -48,8 +49,24 @@ using librmb::rbox_metadata_key;
 
 void rbox_mail_set_expunged(struct rbox_mail *mail) {
   FUNC_START();
-  // only set mail to expunge. see #222 rbox_set_expunge => index rebuild!
-  mail_set_expunged((struct mail *)mail);
+
+  
+  //we need to do this here to make sure that everything is in sync.
+  //#222 describes error with this approach, but to be honest, slow
+  //     recovery by resyncing the index is maybe the only thing 
+  //     we can do here!
+  struct mail *_mail = &mail->imail.mail.mail;
+
+  mail_index_refresh(_mail->box->index);
+  if (mail_index_is_expunged(_mail->transaction->view, _mail->seq)) {
+    mail_set_expunged(_mail);
+  } else {
+    mail_storage_set_critical(_mail->box->storage, "rbox %s: Unexpectedly lost uid=%u", mailbox_get_path(_mail->box),
+                              _mail->uid);
+    /* the message was probably just purged */
+    mail_storage_set_error(_mail->box->storage, MAIL_ERROR_EXPUNGED, "requested messages no longer exist.");
+    rbox_set_mailbox_corrupted(_mail->box);
+  }
   FUNC_END();
 }
 
@@ -68,9 +85,9 @@ int rbox_get_index_record(struct mail *_mail) {
       return -1;
     }
     const struct obox_mail_index_record *obox_rec = static_cast<const struct obox_mail_index_record *>(rec_data);
+   
     memcpy(rmail->index_guid, obox_rec->guid, sizeof(obox_rec->guid));
     memcpy(rmail->index_oid, obox_rec->oid, sizeof(obox_rec->oid));
-
     rmail->rados_mail->set_oid(guid_128_to_string(rmail->index_oid));
     rmail->last_seq = _mail->seq;
   }
@@ -125,23 +142,28 @@ static int rbox_mail_metadata_get(struct rbox_mail *rmail, enum rbox_metadata_ke
     // make sure that mail_object is initialized,
     // else create and load guid from index.
     rmail->rados_mail = r_storage->s->alloc_rados_mail();
+    rmail->last_seq = -1;
+  }
+  if(rmail->rados_mail->get_oid() == nullptr || rmail->rados_mail->get_oid()->empty()){
     if (rbox_get_index_record(mail) < 0) {
       i_error("Error rbox_get_index_record uid(%d)", mail->uid);
       FUNC_END();
       return -1;
     }
   }
-  
+  if(rmail->rados_mail->get_oid()->length() == 0){
+    i_info("mail uid: %d , oid '%s', guid: %s, index-oid: %s ",mail->uid,rmail->rados_mail->get_oid()->c_str(), guid_128_to_string(rmail->index_guid),  guid_128_to_string(rmail->index_oid) );
+    rmail->rados_mail->set_oid(rmail->index_oid);
+  }
   int ret_load_metadata = r_storage->ms->get_storage()->load_metadata(rmail->rados_mail);
   if (ret_load_metadata < 0) {
     std::string metadata_key = librmb::rbox_metadata_key_to_char(key);
-    if (ret_load_metadata == -ENOENT) {
-      i_warning("Errorcode: %d cannot get x_attr(%s,%c) from object %s, process %d", ret_load_metadata,
-                metadata_key.c_str(), key, rmail->rados_mail->get_oid()->c_str(), getpid());
+    if (ret_load_metadata == -ENOENT) { 
       rbox_mail_set_expunged(rmail);
-    } else {    
-      i_error("Errorcode: %d cannot get x_attr(%s,%c) from object %s, process %d", ret_load_metadata,
-              metadata_key.c_str(), key, rmail->rados_mail != NULL ? rmail->rados_mail->get_oid()->c_str() : " no oid", getpid());
+    } 
+    else {    
+      i_error("Errorcode: process %d returned with %d cannot get x_attr(%s,%c) from rados_object: %s",getpid(), ret_load_metadata,
+              metadata_key.c_str(), key, rmail->rados_mail != NULL ? rmail->rados_mail->to_string(" ").c_str() : " no rados_mail");
     }
     FUNC_END();
     return -1;
@@ -149,7 +171,6 @@ static int rbox_mail_metadata_get(struct rbox_mail *rmail, enum rbox_metadata_ke
 
   // we need to copy the pointer. Because dovecots memory mgmnt will free it!
   char *val = NULL;
-
   librmb::RadosUtils::get_metadata(key, rmail->rados_mail->get_metadata(), &val);
   if (val != NULL) {
     *value_r = i_strdup(val);
@@ -160,7 +181,7 @@ static int rbox_mail_metadata_get(struct rbox_mail *rmail, enum rbox_metadata_ke
   return 0;
 }
 
-static int rbox_mail_get_received_date(struct mail *_mail, time_t *date_r) {
+int rbox_mail_get_received_date(struct mail *_mail, time_t *date_r) {
   FUNC_START();
   struct rbox_mail *rmail = (struct rbox_mail *)_mail;
   struct index_mail_data *data = &rmail->imail.data;
@@ -181,6 +202,7 @@ static int rbox_mail_get_received_date(struct mail *_mail, time_t *date_r) {
     // else create and load guid from index.
     struct rbox_storage *r_storage = (struct rbox_storage *)_mail->box->storage;
     rmail->rados_mail = r_storage->s->alloc_rados_mail();
+    rmail->last_seq = -1;
     if (rbox_get_index_record(_mail) < 0) {
       i_error("Error rbox_get_index uid(%d)", _mail->uid);
       FUNC_END();
@@ -252,6 +274,7 @@ static int rbox_mail_get_save_date(struct mail *_mail, time_t *date_r) {
     // else create and load guid from index.
     struct rbox_storage *r_storage = (struct rbox_storage *)_mail->box->storage;
     rmail->rados_mail = r_storage->s->alloc_rados_mail();
+    rmail->last_seq = -1;
     if (rbox_get_index_record(_mail) < 0) {
       i_error("Error rbox_get_index uid(%d)", _mail->uid);
       FUNC_END();
@@ -266,6 +289,7 @@ static int rbox_mail_get_save_date(struct mail *_mail, time_t *date_r) {
 
   if (rbox_open_rados_connection(_mail->box, alt_storage) < 0) {
     FUNC_END_RET("ret == -1;  connection to rados failed");
+    i_error("ERROR, cannot open rados connection (rbox_mail_get_save_date)");
     return -1;
   }
 
@@ -418,6 +442,27 @@ static int get_mail_stream(struct rbox_mail *mail, librados::bufferlist *buffer,
   return ret;
 }
 
+static int read_mail_from_storage(librmb::RadosStorage *rados_storage, 
+                                  struct rbox_mail *rmail,
+                                  uint64_t *psize,
+                                  time_t *save_date) {
+    
+    int stat_err = 0;
+    int read_err = 0;
+
+    /* duplicate code: get_attribute */
+    librados::ObjectReadOperation *read_mail = new librados::ObjectReadOperation();
+    read_mail->read(0, INT_MAX, rmail->rados_mail->get_mail_buffer(), &read_err);
+    read_mail->stat(psize, save_date, &stat_err);
+
+    int ret = rados_storage->read_operate(*rmail->rados_mail->get_oid(), read_mail,
+                                                  rmail->rados_mail->get_mail_buffer());
+    
+    delete read_mail;
+
+    return ret;
+}
+
 static int rbox_mail_get_stream(struct mail *_mail, bool get_body ATTR_UNUSED, struct message_size *hdr_size,
                                 struct message_size *body_size, struct istream **stream_r) {
   FUNC_START();
@@ -431,6 +476,7 @@ static int rbox_mail_get_stream(struct mail *_mail, bool get_body ATTR_UNUSED, s
   if (data->stream == NULL) {
     if (rbox_open_rados_connection(_mail->box, alt_storage) < 0) {
       FUNC_END_RET("ret == -1;  connection to rados failed");
+      i_error("ERROR, cannot open rados connection (rbox_mail_get_stream)");
       return -1;
     }
     
@@ -444,8 +490,13 @@ static int rbox_mail_get_stream(struct mail *_mail, bool get_body ATTR_UNUSED, s
     if (rmail->rados_mail == nullptr) {
       // make sure that mail_object is initialized,
       // else create and load guid from index.
-      rmail->rados_mail = rados_storage->alloc_rados_mail();
-      if (rbox_get_index_record(_mail) < 0) {
+      rmail->rados_mail = rados_storage->alloc_rados_mail();  
+      rmail->last_seq = -1; 
+    }
+
+    if(rmail->rados_mail->get_oid() == nullptr || rmail->rados_mail->get_oid()->empty()){
+       //reload get index_record.
+       if (rbox_get_index_record(_mail) < 0) {
         i_error("Error rbox_get_index uid(%d)", _mail->uid);
         FUNC_END();
         return -1;
@@ -457,30 +508,43 @@ static int rbox_mail_get_stream(struct mail *_mail, bool get_body ATTR_UNUSED, s
     uint64_t psize;
     time_t save_date;
 
-    int stat_err = 0;
-    int read_err = 0;
-
-    librados::ObjectReadOperation *read_mail = new librados::ObjectReadOperation();
-    read_mail->read(0, INT_MAX, rmail->rados_mail->get_mail_buffer(), &read_err);
-    read_mail->stat(&psize, &save_date, &stat_err);
-
-    librados::AioCompletion *completion = librados::Rados::aio_create_completion();
-    ret = rados_storage->get_io_ctx().aio_operate(*rmail->rados_mail->get_oid(), completion, read_mail,
-                                                  rmail->rados_mail->get_mail_buffer());
-    completion->wait_for_complete_and_cb();
-    ret = completion->get_return_value();
-    completion->release();
-    delete read_mail;
+    ret = read_mail_from_storage(rados_storage, rmail,&psize,&save_date);
 
     if (ret < 0) {
       if (ret == -ENOENT) {
-        i_warning("Mail not found. %s, ns='%s', process %d, alt_storage(%d) -> marking mail as expunged!",
+        // This can happen, if we have more then 2 processes running at the same time.
+        // if one deletes a mail, the other will only notice, when it tries to access it.
+        // so its reasonable to set this to debug log level. Other plugins not even do that
+        // in this case.
+        i_debug("Mail not found. %s, ns='%s', process %d, alt_storage(%d) -> marking mail as expunged!",
                   rmail->rados_mail->get_oid()->c_str(), rados_storage->get_namespace().c_str(), getpid(), alt_storage);
         rbox_mail_set_expunged(rmail);
         FUNC_END_RET("ret == -1");
         delete rmail->rados_mail->get_mail_buffer();
         return -1;
-      } else {
+      } 
+      else if(ret == -ETIMEDOUT) {
+        int max_retry = 10; //TODO FIX 
+        for(int i=0;i<max_retry;i++){
+          ret = read_mail_from_storage(rados_storage, rmail,&psize,&save_date);
+          if(ret >= 0){
+            i_error("READ TIMEOUT %d reading mail object %s ", ret,rmail->rados_mail != NULL ? rmail->rados_mail->to_string(" ").c_str() : " no rados_mail");
+            break;
+          }
+          i_warning("READ TIMEOUT retry(%d) %d reading mail object %s ",i, ret,rmail->rados_mail != NULL ? rmail->rados_mail->to_string(" ").c_str() : " no rados_mail");
+          // wait random time before try again!!
+          usleep(((rand() % 5) + 1) * 10000);
+          // clear the read buffer in case of timeout
+          rmail->rados_mail->get_mail_buffer()->clear();
+        }
+      
+        if(ret <0){          
+          delete rmail->rados_mail->get_mail_buffer();
+          FUNC_END();
+          return -1;
+        }
+      } 
+      else {
         i_error("reading mail return code(%d), oid(%s),namespace(%s), alt_storage(%d)", ret,
                 rmail->rados_mail->get_oid()->c_str(), rados_storage->get_namespace().c_str(), alt_storage);
         FUNC_END_RET("ret == -1");
@@ -511,11 +575,33 @@ static int rbox_mail_get_stream(struct mail *_mail, bool get_body ATTR_UNUSED, s
       return -1;
     }
 
+    i_debug("reading stream for oid: %s, phy: %d, buffer: %d", rmail->rados_mail->get_oid()->c_str(),
+                                                               physical_size, 
+                                                               rmail->rados_mail->get_mail_buffer()->length());
+    // validates if object is in zlib format (first 2 byte)
+    bool isGzip = check_is_zlib(rmail->rados_mail->get_mail_buffer());
+    if(isGzip) {
+      uint32_t result = zlib_trailer_msg_length(rmail->rados_mail->get_mail_buffer(),physical_size);
+      
+      // get mails real physical size and compare against trailer length
+      uoff_t real_physical_size;
+      rbox_mail_get_physical_size(_mail, &real_physical_size);
+      // in case we have corrupt trailer, 
+      if(result-real_physical_size > zlib_header_length(rmail->rados_mail->get_mail_buffer())) {
+          i_warning("zlib size check failed %d trailer not as expected, fixing by adding 0x00 to msb",(result-real_physical_size));
+          rmail->rados_mail->get_mail_buffer()->append(0x00);
+          physical_size+=1;                 
+      }
+    }
+  
     if (get_mail_stream(rmail, rmail->rados_mail->get_mail_buffer(), physical_size, &input) < 0) {
+      i_debug("get mail failed");
       FUNC_END_RET("ret == -1");
       delete rmail->rados_mail->get_mail_buffer();
       return -1;
     }
+    
+    i_debug("get mail failed retval of get_mail_stream %d",ret);
 
     data->stream = input;
     index_mail_set_read_buffer_size(_mail, input);
@@ -523,6 +609,82 @@ static int rbox_mail_get_stream(struct mail *_mail, bool get_body ATTR_UNUSED, s
   ret = index_mail_init_stream(&rmail->imail, hdr_size, body_size, stream_r);
   FUNC_END();
   return ret;
+}
+uint32_t zlib_trailer_msg_length(librados::bufferlist* mail_buffer, int physical_size) {
+    unsigned char gzip_size[] = {
+                        mail_buffer->c_str()[physical_size-1], 
+                        mail_buffer->c_str()[physical_size-2],
+                        mail_buffer->c_str()[physical_size-3],
+                        mail_buffer->c_str()[physical_size-4]
+                        };        
+    uint32_t result = (gzip_size[0] << 24 | gzip_size[1] << 16 | gzip_size[2] << 8 | gzip_size[3]);
+    
+    i_debug("length of message(%d) last byte of trailer %d / %d / %d / %d sizeof(char %d), sizeof(unsingned int: %d) ",
+      result,
+      gzip_size[0], gzip_size[1], gzip_size[2], gzip_size[3],
+      sizeof(char), sizeof(unsigned int));
+    return result;
+
+}
+bool check_is_zlib(librados::bufferlist* mail_buffer) {
+
+    unsigned char magic1 = mail_buffer->c_str()[0];
+    unsigned char magic2 = mail_buffer->c_str()[1];
+
+    i_debug("checking for z_lib header magic bytes check %x : %x compared to %x : %x",
+        magic1,magic2,
+        0x1f,0x8b);   
+
+    if(magic1 == 0x1f && magic2 == 0x8b){
+      i_debug("magic bytes 0x1f 0x8b found");
+      return true;
+    }                        
+    i_debug("magic bytes 0x1f 0x8b not found");
+    return false;
+}
+
+int zlib_header_length(librados::bufferlist* mail_buffer) {
+    
+    int header_length = 11;    
+    const unsigned char FLG=mail_buffer->c_str()[3];
+
+    switch (FLG){
+        //ETEXT
+        case (unsigned char) 0x01:
+            header_length=10;
+            break;
+        case (unsigned char) 0x02:
+            header_length=10 + 2;
+            break;
+        //FXTERA
+        case (unsigned char) 0x04:
+            header_length=header_extra_size(mail_buffer->c_str());
+            break;
+        case (unsigned char) 0x08:
+            header_length=header_dynamic_size(mail_buffer->c_str());
+            break;
+        case (unsigned char) 0x10:
+            header_length=header_dynamic_size(mail_buffer->c_str());
+            break;
+    default:
+        break;
+    }             
+  i_debug("found header Type %x header size is %d", FLG, header_length);
+
+  return header_length;
+}
+int header_dynamic_size(const unsigned char *data){
+
+    int i=10 - 1;
+    do{
+        i++;
+    }while(data[i]!=(unsigned char) 0 );
+    return i++;
+}
+
+int header_extra_size(const unsigned char *data){
+    int extera_part_size= int(data[10] + data[11]);
+    return 10 + 2 + extera_part_size;
 }
 
 // guid is saved in the obox header, and should be available when rbox_mail does exist. (rbox_get_index_record)
@@ -572,8 +734,9 @@ static int rbox_get_cached_metadata(struct rbox_mail *mail, enum rbox_metadata_k
   unsigned int order = 0;
 
   string_t *str = str_new(imail->mail.data_pool, 64);
-  if (mail_cache_lookup_field(imail->mail.mail.transaction->cache_view, str, imail->mail.mail.seq,
-                              ibox->cache_fields[cache_field].idx) > 0) {
+  if (mail_cache_lookup_field(imail->mail.mail.transaction->cache_view, 
+                              str, imail->mail.mail.seq,
+                              ibox->cache_fields[cache_field].idx) > 0) {                              
     if (cache_field == MAIL_CACHE_POP3_ORDER) {
       i_assert(str_len(str) == sizeof(order));
       memcpy(&order, str_data(str), sizeof(order));

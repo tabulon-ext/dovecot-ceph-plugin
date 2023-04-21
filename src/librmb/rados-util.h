@@ -16,6 +16,11 @@
 #include <time.h>
 #include <stdlib.h>
 
+#include <iostream>
+#include <vector>
+#include <map>
+#include <regex>
+
 #include <string>
 #include <map>
 #include <rados/librados.hpp>
@@ -180,6 +185,24 @@ class RadosUtils {
    * @return the metadata value
    */
   static void get_metadata(rbox_metadata_key key, std::map<std::string, ceph::bufferlist> *metadata, char **value);
+
+
+  /**
+   * POC Implemnentation to extract pgs and primary osds from mon_command output!
+   **/
+  static std::vector<std::string> extractPgs(const std::string& str);
+
+  static std::map<std::string, std::vector<std::string>> extractPgAndPrimaryOsd(const std::string& str);
+
+  static std::vector<std::string> split(std::string str_to_split, char delimiter);
+
+
+  static std::string convert_to_ceph_index(const std::set<std::string> &list);
+  static std::string convert_to_ceph_index(const std::string &str);
+
+  static std::set<std::string> ceph_index_to_set(const std::string &str);
+  static double object_size_percent(const double object_size, const double max_object_size);
+  static bool object_size_close_to_reach_max(const double object_size, const double max_object_size);
 };
 
 }  // namespace librmb

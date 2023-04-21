@@ -36,6 +36,8 @@ class RadosConfig {
   std::map<std::string, std::string> *get_config() { return &config; }
 
   std::string &get_pool_name() { return config[pool_name]; }
+  std::string &get_index_pool_name() { return config[index_pool_name]; };
+
   const std::string &get_rados_save_log_file() { return config[save_log]; }
   bool is_config_valid() { return is_valid; }
   void set_config_valid(bool is_valid_) { this->is_valid = is_valid_; }
@@ -44,8 +46,15 @@ class RadosConfig {
 
   std::string &get_rbox_cfg_object_name() { return config[rbox_cfg_object_name]; }
 
+  const std::string &get_write_method() { return config[rbox_write_method]; }
+  const std::string &get_chunk_size() { return config[rbox_chunk_size]; }
+
   const std::string &get_rbox_cluster_name() { return config[rbox_cluster_name]; }
   const std::string &get_rados_username() { return config[rados_username]; }
+  
+  const std::string &get_object_search_method()  { return config[rbox_object_search_method]; }
+  const std::string &get_object_search_threads() { return config[rbox_object_search_threads]; }
+
   void update_metadata(const std::string &key, const char *value_);
   bool is_ceph_posix_bugfix_enabled() {
     return config[bugfix_cephfs_posix_hardlinks].compare("true") == 0 ? true : false;
@@ -72,7 +81,7 @@ class RadosConfig {
  private:
   std::map<std::string, std::string> config;
   std::string pool_name;
-
+  std::string index_pool_name;
   std::string rbox_cfg_object_name;
   std::string rbox_cluster_name;
   std::string rados_username;
@@ -82,6 +91,10 @@ class RadosConfig {
   std::string rbox_check_empty_mailboxes;
   std::string rbox_ceph_aio_wait_for_safe_and_cb;
   std::string rbox_ceph_write_chunks;
+  std::string rbox_chunk_size;
+  std::string rbox_write_method;
+  std::string rbox_object_search_method;
+  std::string rbox_object_search_threads;
   bool is_valid;
 };
 

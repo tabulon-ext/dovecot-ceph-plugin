@@ -41,6 +41,11 @@ class RadosDovecotCephCfg {
   virtual bool is_ceph_posix_bugfix_enabled() = 0;
   virtual bool is_ceph_aio_wait_for_safe_and_cb() = 0;
   virtual bool is_write_chunks() = 0;
+  virtual int get_chunk_size() = 0;
+  virtual int get_write_method() = 0;
+
+  virtual int get_object_search_method()  = 0;
+  virtual int get_object_search_threads() = 0;
 
   virtual const std::string &get_pool_name_metadata_key() = 0;
   virtual const std::string &get_update_attributes_key() = 0;
@@ -53,6 +58,8 @@ class RadosDovecotCephCfg {
   virtual std::map<std::string, std::string> *get_config() = 0;
 
   virtual std::string &get_pool_name() = 0;
+  virtual std::string &get_index_pool_name() = 0;
+  
   virtual bool is_update_attributes() = 0;
 
   virtual void set_rbox_cfg_object_name(const std::string &value) = 0;

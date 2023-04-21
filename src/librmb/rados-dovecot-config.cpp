@@ -19,6 +19,7 @@ namespace librmb {
 
 RadosConfig::RadosConfig()
     : pool_name("rbox_pool_name"),
+      index_pool_name("rbox_index_pool_name"),
       rbox_cfg_object_name("rbox_cfg_object_name"),
       rbox_cluster_name("rbox_cluster_name"),
       rados_username("rados_user_name"),
@@ -27,9 +28,14 @@ RadosConfig::RadosConfig()
       save_log("rados_save_log"),
       rbox_check_empty_mailboxes("rados_check_empty_mailboxes"),
       rbox_ceph_aio_wait_for_safe_and_cb("rbox_ceph_aio_wait_for_safe_and_cb"),
-      rbox_ceph_write_chunks("rbox_ceph_write_chunks") {
+      rbox_ceph_write_chunks("rbox_ceph_write_chunks"),
+      rbox_chunk_size("rbox_chunk_size"),
+      rbox_write_method("rbox_write_method"),
+      rbox_object_search_method("rbox_object_search_method"),
+      rbox_object_search_threads("rbox_object_search_threads") {
+        
   config[pool_name] = "mail_storage";
-
+  config[index_pool_name] = "object_recovery";
   config[rbox_cfg_object_name] = "rbox_cfg";
   config[rbox_cluster_name] = "ceph";
   config[rados_username] = "client.admin";
@@ -38,6 +44,11 @@ RadosConfig::RadosConfig()
   config[rbox_check_empty_mailboxes] = "false";
   config[rbox_ceph_aio_wait_for_safe_and_cb] = "false";
   config[rbox_ceph_write_chunks] = "false";
+  config[rbox_chunk_size] = "10240";
+  config[rbox_write_method] = "0";
+  config[rbox_object_search_method] = "0";
+  config[rbox_object_search_threads] = "4";
+  
   is_valid = false;
 }
 
@@ -65,6 +76,8 @@ void RadosConfig::update_metadata(const std::string &key, const char *value_) {
 std::string RadosConfig::to_string() {
   std::stringstream ss;
   ss << "Dovecot configuration: (90-plugin.conf)" << std::endl;
+  ss << "  " << pool_name << "=" << config[pool_name] << std::endl;
+  ss << "  " << index_pool_name << "=" << config[index_pool_name] << std::endl;
   ss << "  " << rbox_cfg_object_name << "=" << config[rbox_cfg_object_name] << std::endl;
   ss << "  " << rbox_cluster_name << "=" << config[rbox_cluster_name] << std::endl;
   ss << "  " << rados_username << "=" << config[rados_username] << std::endl;
@@ -72,8 +85,12 @@ std::string RadosConfig::to_string() {
   ss << "  " << save_log << "=" << config[save_log] << std::endl;
   ss << "  " << rbox_check_empty_mailboxes << "=" << config[rbox_check_empty_mailboxes] << std::endl;
   ss << "  " << rbox_ceph_aio_wait_for_safe_and_cb << "=" << config[rbox_ceph_aio_wait_for_safe_and_cb] << std::endl;
-  ss << "  " << rbox_ceph_write_chunks << "=" << config[rbox_ceph_write_chunks]
-     << std::endl;
+  ss << "  " << rbox_ceph_write_chunks << "=" << config[rbox_ceph_write_chunks] << std::endl;
+  ss << "  " << rbox_write_method << "=" << config[rbox_write_method] << std::endl;
+  ss << "  " << rbox_chunk_size << "=" << config[rbox_chunk_size] << std::endl;
+  ss << "  " << rbox_object_search_method << "=" << config[rbox_object_search_method] << std::endl;
+  ss << "  " << rbox_object_search_threads << "=" << config[rbox_object_search_threads] << std::endl;
+  
   return ss.str();
 }
 

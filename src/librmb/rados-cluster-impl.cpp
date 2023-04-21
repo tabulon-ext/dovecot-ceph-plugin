@@ -17,7 +17,7 @@
 
 #include "rados-dictionary-impl.h"
 #include "rados-storage-impl.h"
-
+#include "rados-util.h"
 using std::list;
 using std::pair;
 using std::string;
@@ -28,9 +28,9 @@ const char *RadosClusterImpl::CLIENT_MOUNT_TIMEOUT = "client_mount_timeout";
 const char *RadosClusterImpl::RADOS_MON_OP_TIMEOUT = "rados_mon_op_timeout";
 const char *RadosClusterImpl::RADOS_OSD_OP_TIMEOUT = "rados_osd_op_timeout";
 
-const char *RadosClusterImpl::CLIENT_MOUNT_TIMEOUT_DEFAULT = "10";
-const char *RadosClusterImpl::RADOS_MON_OP_TIMEOUT_DEFAULT = "10";
-const char *RadosClusterImpl::RADOS_OSD_OP_TIMEOUT_DEFAULT = "10";
+const char *RadosClusterImpl::CLIENT_MOUNT_TIMEOUT_DEFAULT = "600";
+const char *RadosClusterImpl::RADOS_MON_OP_TIMEOUT_DEFAULT = "600";
+const char *RadosClusterImpl::RADOS_OSD_OP_TIMEOUT_DEFAULT = "600";
 
 // Note: Using Dictionary und RadosStorage with different ceph cluster / user is currently
 //       not supported.
@@ -72,6 +72,52 @@ int RadosClusterImpl::init(const std::string &clustername, const std::string &ra
   return ret;
 }
 
+
+std::vector<std::string> RadosClusterImpl::list_pgs_for_pool(std::string &pool_name) {
+    std::cout << " ola "  << RadosClusterImpl::cluster << std::endl;
+    
+    if(is_connected()){
+      std::cout << " is connected YES" << std::endl;
+    }else{
+      std::cout << " is connected NO" << std::endl;
+      connect();
+    }
+
+    const string cmd =
+    "{"
+    "\"prefix\": \"pg ls-by-pool\", "
+    "\"poolstr\": \"" + pool_name + "\""
+    "}";      
+  
+    librados::bufferlist inbl;
+    librados::bufferlist outbl;
+    RadosClusterImpl::cluster->mon_command(cmd, inbl, &outbl, nullptr);
+    
+    std::vector<std::string> list = RadosUtils::extractPgs(std::string(outbl.c_str()));
+  
+    for (auto const &token: list) {
+          std::cout << token << std::endl;        
+    }
+    return list;
+}
+
+std::map<std::string, std::vector<std::string>> RadosClusterImpl::list_pgs_osd_for_pool(std::string &pool_name) {    
+    
+    if(!is_connected()){      
+      connect();
+    }
+    
+    const string cmd =
+    "{"
+    "\"prefix\": \"pg ls-by-pool\", "
+    "\"poolstr\": \"" + pool_name + "\""
+    "}";      
+        
+    librados::bufferlist inbl;
+    librados::bufferlist outbl;
+    RadosClusterImpl::cluster->mon_command(cmd, inbl, &outbl, nullptr);
+    return RadosUtils::extractPgAndPrimaryOsd(std::string(outbl.c_str()));
+}
 int RadosClusterImpl::initialize() {
   int ret = 0;
 
@@ -175,6 +221,18 @@ int RadosClusterImpl::io_ctx_create(const string &pool, librados::IoCtx *io_ctx)
     ret = RadosClusterImpl::cluster->ioctx_create(pool.c_str(), *io_ctx);
   }
   return ret;
+}
+int RadosClusterImpl::recovery_index_io_ctx(const std::string &pool, 
+  librados::IoCtx *io_ctx) {
+    if(!is_connected()) {
+      return -1;
+    }
+    // pool exists? else create
+    int ret = pool_create(pool);
+    if (ret == 0) {
+      ret = RadosClusterImpl::cluster->ioctx_create(pool.c_str(), *io_ctx);
+    }
+    return ret;      
 }
 
 int RadosClusterImpl::get_config_option(const char *option, string *value) {

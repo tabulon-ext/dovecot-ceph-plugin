@@ -35,6 +35,13 @@ class RadosStorage {
    * if connected, return the valid ioCtx
    */
   virtual librados::IoCtx &get_io_ctx() = 0;
+
+  /*!
+   * if connected, return the valid ioCtx for recovery index
+   */
+  virtual librados::IoCtx &get_recovery_io_ctx() = 0;
+
+
   /*! get the object size and object save date
    * @param[in] oid unique ident for the object
    * @param[out] psize size of the object
@@ -49,19 +56,35 @@ class RadosStorage {
    * */
   virtual std::string get_namespace() = 0;
   /*! get the pool name
-   * @return copy of the current pool name
+   * @return copy of the current p
+
+TEST_F(StorageTest, scanForPg) {
+  
+librmbtest::RadosClusterMock mock_test = librmbtest::RadosClusterMock();
+mock.
+librmb::RadosStorageImpl underTest = librmbtest::RadosStorageImpl(mock_test);
+
+underTest.ceph_index_append()
+underTest.ceph_index_add("dkfkjdf")
+
+}
+ ool name
    * */
   virtual std::string get_pool_name() = 0;
 
   /* set the wait method for async operations */
   virtual void set_ceph_wait_method(enum rbox_ceph_aio_wait_method wait_method) = 0;
 
-  /*! get the max object size in mb
+  /*! get the max operation size in mb
    * @return the maximal number of mb to write in a single write operation*/
   virtual int get_max_write_size() = 0;
-  /*! get the max object size in bytes
+  /*! get the max operation size in bytes
    * @return max number of bytes to write in a single write operation*/
   virtual int get_max_write_size_bytes() = 0;
+
+  /*! get the max ceph object size 
+   */
+  virtual int get_max_object_size() = 0;
 
   /*! In case the current object size exceeds the max_write (bytes), object should be split into
    * max smaller operations and executed separately.
@@ -100,6 +123,14 @@ class RadosStorage {
    *
    * @return object iterator or librados::NObjectIterator::__EndObjectIterator */
   virtual librados::NObjectIterator find_mails(const RadosMetadata *attr) = 0;
+
+
+  virtual std::set<std::string> find_mails_async(const RadosMetadata *attr, 
+                                                 std::string &pool_name, 
+                                                 int num_threads,
+                                                 void (*ptr)(std::string&)) = 0;
+
+
   /*! open the rados connections with default cluster and username
    * @param[in] poolname the poolname to connect to, in case this one does not exists, it will be created.
    * */
@@ -114,6 +145,25 @@ class RadosStorage {
    * */
   virtual int open_connection(const std::string &poolname, const std::string &clustername,
                               const std::string &rados_username) = 0;
+
+  /*! open the rados connections with default cluster and username
+   * @param[in] poolname the poolname to connect to, in case this one does not exists, it will be created.
+   * @param[in] index_pool the poolname to store recovery index objects to.
+   * */
+  virtual int open_connection(const std::string &poolname, const std::string &index_pool) = 0;
+
+ /*! open the rados connection with given user and clustername
+   *
+   * @param[in] poolname the poolname to connect to, in case this one does not exists, it will be created.
+   * @param[in] index_pool the poolname to store recovery index objects to.
+   * @param[in] clustername custom clustername
+   * @param[in] rados_username custom username (client.xxx)
+   *
+   * @return linux error code or 0 if successful.
+   * */
+  virtual int open_connection(const std::string &poolname, const std::string &index_pool,
+                      const std::string &clustername,
+                      const std::string &rados_username) = 0;
   /*!
    * close the connection. (clean up structures to allow reconnect)
    */
@@ -142,6 +192,39 @@ class RadosStorage {
    * @return linux errorcode or 0 if successful
    * */
   virtual int save_mail(const std::string &oid, librados::bufferlist &buffer) = 0;
+
+  /**
+   * append oid to index object
+  */
+  virtual int ceph_index_append(const std::string &oid) = 0;
+
+  /**
+   * append oids to index object
+  */
+  virtual int ceph_index_append(const std::set<std::string> &oids) = 0;
+
+  /**
+   * overwrite ceph index object
+  */
+  virtual int ceph_index_overwrite(const std::set<std::string> &oids) = 0;
+
+  /**
+   * get the ceph index object as list of oids
+   * 32
+  */
+  virtual std::set<std::string> ceph_index_read() = 0;
+
+
+  /**
+   * remove oids from index object
+  */
+  virtual int ceph_index_delete() = 0;
+
+  /**
+   * returns the ceph index size
+  */
+  virtual uint64_t ceph_index_size() = 0;
+
   /*! read the complete mail object into bufferlist
    *
    * @param[in] oid unique object identifier
@@ -149,6 +232,16 @@ class RadosStorage {
    * @return linux errorcode or 0 if successful
    * */
   virtual int read_mail(const std::string &oid, librados::bufferlist *buffer) = 0;
+
+  /*! read the complete mail object into bufferlist
+   *
+   * @param[in] oid unique object identifier
+   * @param[in] read_operation read operation
+   * @param[out] buffer valid ptr to bufferlist.
+   * @return linux errorcode or 0 if successful
+   * */
+  virtual int read_operate(const std::string &oid, librados::ObjectReadOperation *read_operation, librados::bufferlist *bufferlist) = 0;
+
   /*! move a object from the given namespace to the other, updates the metadata given in to_update list
    *
    * @param[in] src_oid unique identifier of source object
@@ -173,20 +266,23 @@ class RadosStorage {
   virtual int copy(std::string &src_oid, const char *src_ns, std::string &dest_oid, const char *dest_ns,
                    std::list<RadosMetadata> &to_update) = 0;
   /*! save the mail
-   * @param[in] mail valid rados mail.
-   * @param[in] save_async if false save will be synchronous.
+   * @param[in] mail valid rados mail.   
    * @return false in case of error
    * */
-  virtual bool save_mail(RadosMail *mail, bool &save_async) = 0;
+  virtual bool save_mail(RadosMail *mail) = 0;
   /*!
    * save the mail
    * @param[in] write_op_xattr write operation to use
-   * @param[in] mail valid mail object
-   * @param[in] save_async if false save will be synchronous.
+   * @param[in] mail valid mail object   
    * @return false in case of error.
    *
    */
-  virtual bool save_mail(librados::ObjectWriteOperation *write_op_xattr, RadosMail *mail, bool save_async) = 0;
+  virtual bool save_mail(librados::ObjectWriteOperation *write_op_xattr, RadosMail *mail) = 0;
+
+  virtual bool execute_operation(std::string &oid, librados::ObjectWriteOperation *write_op_xattr) = 0;
+
+  virtual bool append_to_object(std::string &oid, librados::bufferlist &bufferlist, int length) = 0;
+
   /*! create a new RadosMail
    * create new rados Mail Object.
    *  return pointer to mail object or nullptr
@@ -196,6 +292,7 @@ class RadosStorage {
    * @param[in] mail ptr to valid mail object
    * */
   virtual void free_rados_mail(librmb::RadosMail *mail) = 0;
+
 
 };
 
